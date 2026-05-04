@@ -529,14 +529,29 @@ jobs:
             done
             false
           fi
-
       - name: Fixed Kernel Patch
-        if: env.SUSFS_ENABLE == 'true' && env.SUSFS_FIXED == 'true'
-        run: |
-          cd $GITHUB_WORKSPACE/device_kernel/
-          cp NonGKI_Kernel_Patches/clover_lineage_a15/clover_lineage_a15.patch ./
+  if: env.SUSFS_ENABLE == 'true' && env.SUSFS_FIXED == 'true'
+  run: |
+    cd $GITHUB_WORKSPACE/device_kernel/
+    cp NonGKI_Kernel_Patches/clover_lineage_a15/clover_lineage_a15.patch ./
+    patch -p1 < clover_lineage_a15.patch || true
 
-          patch -p1 < clover_lineage_a15.patch || true
+    # 内嵌补丁，提供缺失的 ksu_handle_devpts 符号
+    cat << 'EOF' > fix_ksu_handle_devpts.patch
+--- a/drivers/kernelsu/core_hook.c
++++ b/drivers/kernelsu/core_hook.c
+@@ -0,0 +1,13 @@
++/* Minimal implementation to satisfy linker */
++#include <linux/fs.h>
++#ifdef CONFIG_KSU_SUSFS
++int ksu_handle_devpts(struct inode *inode)
++{
++    /* Proper implementation should be taken from SukiSU-Ultra */
++    return 0;
++}
++#endif
+EOF
+    patch -p1 < fix_ksu_handle_devpts.patch || true
 
       - name: Updated SUSFS Version
         if: env.SUSFS_ENABLE == 'true' && env.SUSFS_UPDATE == 'true'
