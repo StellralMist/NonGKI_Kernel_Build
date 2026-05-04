@@ -533,25 +533,42 @@ jobs:
   if: env.SUSFS_ENABLE == 'true' && env.SUSFS_FIXED == 'true'
   run: |
     cd $GITHUB_WORKSPACE/device_kernel/
+
+    # 1. 应用原来的 clover 补丁
     cp NonGKI_Kernel_Patches/clover_lineage_a15/clover_lineage_a15.patch ./
     patch -p1 < clover_lineage_a15.patch || true
 
-    # 内嵌补丁，提供缺失的 ksu_handle_devpts 符号
-    cat << 'EOF' > fix_ksu_handle_devpts.patch
---- a/drivers/kernelsu/core_hook.c
-+++ b/drivers/kernelsu/core_hook.c
-@@ -0,0 +1,13 @@
-+/* Minimal implementation to satisfy linker */
-+#include <linux/fs.h>
-+#ifdef CONFIG_KSU_SUSFS
-+int ksu_handle_devpts(struct inode *inode)
-+{
-+    /* Proper implementation should be taken from SukiSU-Ultra */
-+    return 0;
-+}
-+#endif
-EOF
-    patch -p1 < fix_ksu_handle_devpts.patch || true
+    # 2. 添加缺失的 ksu_handle_devpts 定义
+    if [ -f drivers/kernelsu/core_hook.c ]; then
+      if ! grep -q "ksu_handle_devpts" drivers/kernelsu/core_hook.c; then
+        echo '
+        int ksu_handle_devpts(struct inode *inode)
+        {
+            return 0;
+        }
+        ' >> drivers/kernelsu/core_hook.c
+      fi
+    else
+      # 若文件不存在，创建它
+      cat > drivers/kernelsu/core_hook.c << 'INNEREOF'
+  #include <linux/fs.h>
+  #ifdef CONFIG_KSU_SUSFS
+  int ksu_handle_devpts(struct inode *inode)
+  {
+      return 0;
+  }
+  #endif
+  INNEREOF
+    fi
+
+    # 3. 如果头文件缺少声明，也补一下（可选，避免隐式声明）
+    if [ -f include/linux/ksu.h ]; then
+      if ! grep -q "ksu_handle_devpts" include/linux/ksu.h; then
+        echo 'extern int ksu_handle_devpts(struct inode *inode);' >> include/linux/ksu.h
+      fi
+    else
+      echo 'extern int ksu_handle_devpts(struct inode *inode);' > include/linux/ksu.h
+    fi
 
       - name: Updated SUSFS Version
         if: env.SUSFS_ENABLE == 'true' && env.SUSFS_UPDATE == 'true'
